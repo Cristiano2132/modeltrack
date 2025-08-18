@@ -1,0 +1,10 @@
+pandas
+numpy
+scikit-learn
+matplotlib
+seaborn
+statsmodels
+scipy
+tabulate
+pyspark==3.5.1
+pyarrow

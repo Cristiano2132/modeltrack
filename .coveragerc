@@ -1,0 +1,19 @@
+[run]
+source = expdespy
+branch = True
+omit =
+    */__init__.py
+    */migrations/*
+    */tests/*
+    */datasets/*
+
+[report]
+show_missing = True
+skip_covered = False
+fail_under = 80
+
+; 🔍 O que significa
+; 	•	branch = True → mede também se todos os ramos do código foram executados (if/else, try/except).
+; 	•	source = mypackage → só mede o código do seu pacote, e não o que estiver em tests/ ou no Python global.
+; 	•	omit = → lista de arquivos que não entram na conta.
+; 	•	fail_under = 90 → força falha se cobertura < 90%.

@@ -1,0 +1,12 @@
+version: "3.9"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: test_runner
+    volumes:
+      - .:/app
+    working_dir: /app
+    command: bash -c "coverage run --source=src -m unittest discover -s tests && coverage report --fail-under=80"
