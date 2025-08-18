@@ -42,13 +42,13 @@ patsy==1.0.1
     # via statsmodels
 pillow==11.3.0
     # via matplotlib
-py4j==0.10.9.9
+py4j==0.10.9.7
     # via pyspark
 pyarrow==21.0.0
     # via -r requirements.in
 pyparsing==3.2.3
     # via matplotlib
-pyspark==4.0.0
+pyspark==3.5.1
     # via -r requirements.in
 python-dateutil==2.9.0.post0
     # via
