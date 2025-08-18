@@ -1,6 +1,6 @@
 #!/bin/bash
 
-IMAGE_NAME="expdespy-tests"
+IMAGE_NAME="modeltrack-tests"
 
 echo "Building Docker image..."
 if ! docker build -t $IMAGE_NAME .; then

@@ -5,7 +5,6 @@ from modeltrack.features.binning import QuantileBinning
 from modeltrack.features.base import BaseFeatureTransformer
 
 class TestQuantileBinningPandas(unittest.TestCase):
-    
     @classmethod
     def setUpClass(cls):
         cls.df = pd.DataFrame({"feature": [1,2,3,4,5,6,7,8,9,10]})
@@ -19,8 +18,21 @@ class TestQuantileBinningPandas(unittest.TestCase):
         self.assertEqual(df_transformed["feature_binned"].isnull().sum(), 0)
         self.assertTrue(self.transformer.fitted)
 
-class TestQuantileBinningSpark(unittest.TestCase):
+    def test_fit_only(self):
+        self.transformer.fit(self.df)
+        self.assertTrue(self.transformer.fitted)
 
+    def test_transform_only_after_fit(self):
+        self.transformer.fit(self.df)
+        df_transformed = self.transformer.transform(self.df)
+        self.assertIn("feature_binned", df_transformed.columns)
+
+    def test_transform_raises_error_if_not_fitted(self):
+        with self.assertRaises(RuntimeError):
+            self.transformer.transform(self.df)
+
+
+class TestQuantileBinningSpark(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.spark = SparkSession.builder \
@@ -45,8 +57,37 @@ class TestQuantileBinningSpark(unittest.TestCase):
         self.assertEqual(df_pd["feature_binned"].isnull().sum(), 0)
         self.assertTrue(self.transformer.fitted)
 
+    def test_fit_only(self):
+        self.transformer.fit(self.df)
+        self.assertTrue(self.transformer.fitted)
+
+    def test_transform_only_after_fit(self):
+        self.transformer.fit(self.df)
+        df_transformed = self.transformer.transform(self.df)
+        df_pd = df_transformed.toPandas()
+        self.assertIn("feature_binned", df_pd.columns)
+
+    def test_transform_raises_error_if_not_fitted(self):
+        with self.assertRaises(RuntimeError):
+            self.transformer.transform(self.df)
+
 class TestBaseFeatureTransformer(unittest.TestCase):
-    def test_abstract_class(self):
+    def test_abstract_class_instantiation(self):
         with self.assertRaises(TypeError):
-            # Não pode instanciar diretamente BaseFeatureTransformer
             BaseFeatureTransformer()
+
+    def test_fitted_property(self):
+        class DummyTransformer(BaseFeatureTransformer):
+            def fit(self, X):
+                self.fitted = True
+                return self
+            def transform(self, X):
+                if not getattr(self, "fitted", False):
+                    raise ValueError("Not fitted")
+                return X
+
+        transformer = DummyTransformer()
+        transformer.fit(pd.DataFrame({"a": [1]}))
+        self.assertTrue(transformer.fitted)
+        df_out = transformer.transform(pd.DataFrame({"a": [1]}))
+        pd.testing.assert_frame_equal(df_out, pd.DataFrame({"a": [1]}))

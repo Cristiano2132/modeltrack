@@ -27,10 +27,11 @@ jobs:
 
       # Instala Java (necessário para PySpark)
       - name: Set up Java
+        id: setup-java
         uses: actions/setup-java@v3
         with:
           distribution: 'temurin'
-          java-version: '17'  # Compatível com Spark 3.x
+          java-version: '21'  # Spark funciona bem com Java 21
 
       - name: Install dependencies
         run: |
@@ -46,6 +47,9 @@ jobs:
       - name: Run tests with coverage
         env:
           JAVA_HOME: ${{ steps.setup-java.outputs.java-home }}
+          PATH: ${{ steps.setup-java.outputs.java-home }}/bin:$PATH
         run: |
-          coverage run --source=expdespy -m unittest discover -s tests
+          echo "Using Java from $JAVA_HOME"
+          java -version
+          coverage run --source=modeltrack -m unittest discover -s tests
           coverage report --fail-under=80
