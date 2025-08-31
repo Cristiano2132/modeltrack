@@ -8,3 +8,6 @@ scipy
 tabulate
 pyspark==3.5.1
 pyarrow
+lightgbm
+xgboost
+optuna
