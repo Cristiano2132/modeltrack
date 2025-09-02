@@ -29,6 +29,17 @@ class Binner(BaseBinner):
         self.return_labels = return_labels
         self.features_bins_labels: dict = {}
 
+    def import_config(self, features_bins_labels: dict):
+        """
+        Import configuration for Binner.
+
+        Parameters
+        ----------
+        features_bins_labels : dict
+            Mapping of feature names to their bin edges and labels.
+        """
+        self.features_bins_labels = features_bins_labels
+
     def fit(self, X: pd.Series, y: pd.Series) -> None:
         """
         Fit the binner to the data.

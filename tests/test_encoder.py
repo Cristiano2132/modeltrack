@@ -123,6 +123,18 @@ class TestWOEEncoderPandasVsSpark(unittest.TestCase):
         })
         self.df_spark = self.spark.createDataFrame(self.df_pd)
 
+    def test_import_config(self):
+        encoder = WOEEncoder()
+        woe_map = {
+            "cat": {
+                "A": 0.5,
+                "B": -0.5,
+                "C": 0.0
+            }
+        }
+        encoder.import_config(woe_map)
+        self.assertEqual(encoder.woe_map, woe_map)
+
     def test_pandas_vs_spark_transformation(self):
         encoder = WOEEncoder()
         encoder.fit(self.df_pd["cat"], self.df_pd["target"], col_name="cat")

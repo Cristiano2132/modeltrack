@@ -40,11 +40,13 @@ Exemplo de uso
 
 from .binning import TreeBinner, CutBinner
 from .encoder import WOEEncoder
-from .feature_pipeline import FeaturePipeline
+from .feature_pipeline import FeaturePipelineDev, FeaturePipelinePrd
 
 __all__ = [
     "TreeBinner",
     "CutBinner",
     "WOEEncoder",
     "FeaturePipeline",
+    "FeaturePipelineDev",
+    "FeaturePipelinePrd",
 ]

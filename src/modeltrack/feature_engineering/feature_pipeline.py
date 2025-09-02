@@ -1,60 +1,108 @@
-# feature_engineering/feature_pipeline.py
+import json
 import pandas as pd
-from .base import BaseBinner
+from pathlib import Path
+from typing import List, Dict, Any, Union
+from pyspark.sql import DataFrame as SparkDataFrame
 
-class FeaturePipeline:
-    def __init__(self, transformations: dict):
-        """
-        transformations: dict[col_name] -> list(instances of Transformers)
-        ex:
-        {
-            "idade": [TreeBinner(max_depth=2), WOEEncoder()],
-            "renda": [CutBinner(bins=[2000,5000]), WOEEncoder()],
-            "sexo": [WOEEncoder()],
-        }
-        """
-        self.transformations = transformations
-        self.fitted_transformers = {}
-        self.binning_rules = {}  # col -> bins (se houver)
-        self.woe_maps = {}       # col -> woe_map (se houver)
+from modeltrack.feature_engineering.binning import TreeBinner, CutBinner
+from modeltrack.feature_engineering.encoder import WOEEncoder
 
-    def fit(self, X: pd.DataFrame, y: pd.Series):
-        self.fitted_transformers = {}
-        self.binning_rules = {}
-        self.woe_maps = {}
 
-        for col, steps in self.transformations.items():
-            series = X[col]
-            fitted_steps = []
-            for step in steps:
-                # fit pode retornar info (ex.: bins, woe_map)
-                info = step.fit(series, y)
-                # se for um binner, capture explicitamente os cuts
-                if isinstance(step, BaseBinner):
-                    self.binning_rules[col] = getattr(step, "bins", info)
-                    # após fit, atualiza a série com os valores binned
-                    series = step.transform(series)
-                else:
-                    # genérico (ex: WOEEncoder)
-                    # se o fit retornou um map (woe_map), pode armazenar
-                    if isinstance(info, dict):
-                        # assume que é woe_map
-                        self.woe_maps[col] = info
-                    series = step.transform(series)
-                fitted_steps.append(step)
+class FeaturePipelineDev:
+    """
+    Pipeline de feature engineering para ambiente de desenvolvimento.
+    Faz o fit nos dados, aplica transformações e salva os metadados em JSON.
+    """
 
-            self.fitted_transformers[col] = fitted_steps
-        return self
+    def __init__(self, binning_method: str = "tree", max_depth: int = 3):
+        if binning_method == "tree":
+            self.binner = TreeBinner(max_depth=max_depth)
+        elif binning_method == "cut":
+            self.binner = CutBinner()
+        else:
+            raise ValueError("Método de binning inválido. Use 'tree' ou 'cut'.")
+        self.encoder = WOEEncoder()
+        self.fitted_features: Dict[str, Any] = {}
 
-    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
-        X_out = X.copy()
-        for col, steps in self.fitted_transformers.items():
-            series = X_out[col]
-            for step in steps:
-                series = step.transform(series)
-            X_out[col] = series
-        return X_out
+    def fit_transform(
+        self,
+        df: Union[pd.DataFrame, SparkDataFrame],
+        features_binning: List[str],
+        features_encoding: List[str],
+        target: str,
+        suffix_binning: str = "_binned",
+        suffix_encoding: str = "_woe"
+    ):
+        # Binning
+        for f in features_binning:
+            self.binner.fit(
+                X=df[f].toPandas() if isinstance(df, SparkDataFrame) else df[f],
+                y=df[target].toPandas() if isinstance(df, SparkDataFrame) else df[target],
+                col_name=f
+            )
+        df = self.binner.transform_dataframe(df, features_binning, suffix=suffix_binning)
 
-    def fit_transform(self, X: pd.DataFrame, y: pd.Series) -> pd.DataFrame:
-        self.fit(X, y)
-        return self.transform(X)
+        # WOE
+        for f in features_encoding:
+            self.encoder.fit(
+                X=df[f].toPandas() if isinstance(df, SparkDataFrame) else df[f],
+                y=df[target].toPandas() if isinstance(df, SparkDataFrame) else df[target],
+                col_name=f
+            )
+        if isinstance(df, SparkDataFrame):
+            df = self.encoder.transform(df, columns=features_encoding, suffix=suffix_encoding)
+        else:
+            df = self.encoder.transform_dataframe(df, features=features_encoding, suffix=suffix_encoding)
+
+        return df
+
+    def save(self, path: Union[str, Path]):
+        """Salva os parâmetros do binner e encoder em JSON."""
+        path = Path(path)
+        path.mkdir(parents=True, exist_ok=True)
+        binner_path = path / "binner.json"
+        # salvar bins
+        with open(binner_path, "w") as f:
+            json.dump(self.binner.features_bins_labels, f, indent=2)
+
+        # salvar WOE
+        encoder_path = path / "encoder.json"
+        with open(encoder_path, "w") as f:
+            json.dump(self.encoder.woe_map, f, indent=2)
+
+
+class FeaturePipelinePrd:
+    """
+    Pipeline de produção que carrega parâmetros já treinados
+    e aplica as transformações automaticamente.
+    """
+
+    def __init__(self, path: Union[str, Path]):
+        path = Path(path)
+        self.binner = TreeBinner()
+        self.encoder = WOEEncoder()
+
+        # Carregar metadados
+        with open(path / "binner.json", "r") as f:
+            self.binner.import_config(json.load(f))
+        with open(path / "encoder.json", "r") as f:
+            self.encoder.import_config(json.load(f))
+
+    def transform(
+        self,
+        df: Union[pd.DataFrame, SparkDataFrame],
+        features_binning: List[str],
+        features_encoding: List[str],
+        suffix_binning: str = "_binned",
+        suffix_encoding: str = "_woe"
+    ):
+        # Aplicar binning
+        df = self.binner.transform_dataframe(df, features_binning, suffix=suffix_binning)
+
+        # Aplicar WOE
+        if isinstance(df, SparkDataFrame):
+            df = self.encoder.transform(df, columns=features_encoding, suffix=suffix_encoding)
+        else:
+            df = self.encoder.transform_dataframe(df, features=features_encoding, suffix=suffix_encoding)
+
+        return df

@@ -37,6 +37,17 @@ class WOEEncoder(Transformer):
         self.unseen_value = unseen_value
         self.woe_map: Dict[str, Dict[Any, float]] = {}
 
+    def import_config(self, woe_map: dict):
+        """
+        Import WOE mapping for the encoder.
+
+        Parameters
+        ----------
+        woe_map : dict
+            Mapping of categories to WOE values for each feature.
+        """
+        self.woe_map = woe_map
+
     def fit(self, X: pd.Series, y: pd.Series, col_name: str) -> Dict[Any, float]:
         """
         Fit WOE mapping for a single column.
@@ -91,7 +102,8 @@ class WOEEncoder(Transformer):
     def transform(
         self,
         X: Union[pd.Series, pd.DataFrame, Column, SparkDataFrame],
-        columns: Optional[Union[str, list[str]]] = None
+        columns: Optional[Union[str, list[str]]] = None,
+        suffix: str = "_woe"
     ) -> Union[pd.Series, pd.DataFrame, Column, SparkDataFrame]:
         """
         Transform one or multiple columns using WOE encoding.
@@ -102,6 +114,8 @@ class WOEEncoder(Transformer):
             Feature(s) to transform.
         columns : str or list of str, optional
             Columns to transform (required for DataFrames).
+        suffix : str, optional
+            Suffix to add to transformed columns (default is "_woe").
 
         Returns
         -------
@@ -115,7 +129,7 @@ class WOEEncoder(Transformer):
                 columns = [columns]
             df_out = X.copy()
             for col in columns:
-                df_out[col + "_woe"] = self._transform_pandas(X[col], col)
+                df_out[col + suffix] = self._transform_pandas(X[col], col)
             return df_out
 
         # Pandas Series (use col_name as mandatory)
@@ -130,7 +144,7 @@ class WOEEncoder(Transformer):
                 columns = [columns]
             df_out = X
             for col in columns:
-                df_out = df_out.withColumn(col + "_woe", self._transform_spark(F.col(col), col))
+                df_out = df_out.withColumn(col + suffix, self._transform_spark(F.col(col), col))
             return df_out
 
         # Spark Column (use col_name as mandatory)

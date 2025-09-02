@@ -20,11 +20,22 @@ class TestBinnersPandas(unittest.TestCase):
             "target": [0, 0, 1, 0, 1, 1, 0, 1, 1]
         })
 
-    def test_instance_Binner(self):
+    def test_instance_binner(self):
         binner = Binner()
         cut_binner = CutBinner(bins=[2000, 5000, 8000])
         self.assertIsInstance(binner, BaseBinner)
         self.assertIsInstance(cut_binner, BaseBinner)
+
+    def test_binner_import_config(self):
+        binner = Binner()
+        config = {
+            "idade": {
+                "bins": [30, 40],
+                "labels": ["<30", "[30, 40)", ">=40"]
+            }
+        }
+        binner.import_config(config)
+        self.assertEqual(binner.features_bins_labels, config)
 
     def test_binner_transform(self):
         binner = Binner()
