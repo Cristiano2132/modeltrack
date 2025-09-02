@@ -27,6 +27,7 @@ class Binner(BaseBinner):
         self.bins: List[float] = []
         self.labels: Optional[List[str]] = None
         self.return_labels = return_labels
+        self.features_bins_labels: dict = {}
 
     def fit(self, X: pd.Series, y: pd.Series) -> None:
         """
@@ -143,18 +144,65 @@ class Binner(BaseBinner):
         else:
             raise TypeError("X must be a pandas Series or PySpark Column")
 
-    def transform_dataframe(self, df: Union[pd.DataFrame, SparkDataFrame], features: List[str], suffix: str = "_binned"
-                            ) -> Union[pd.DataFrame, SparkDataFrame]:
+    def transform_dataframe(self,
+                            df: Union[pd.DataFrame, SparkDataFrame],
+                            features: List[str],
+                            suffix: str = "_binned"
+                        ) -> Union[pd.DataFrame, SparkDataFrame]:
+        """
+            Transform multiple features in a DataFrame using the bins and labels stored in `features_bins_labels`.
+
+            Parameters
+            ----------
+            df : pd.DataFrame or SparkDataFrame
+                Input dataframe containing features to transform.
+            features : list of str
+                List of feature/column names to apply binning.
+            suffix : str, default="_binned"
+                Suffix to append to column names in the output dataframe.
+
+            Returns
+            -------
+            pd.DataFrame or SparkDataFrame
+                DataFrame with binned features added as new columns.
+        """
         if isinstance(df, pd.DataFrame):
             out = df.copy()
             for col in features:
-                out[col + suffix] = self._transform_pandas(out[col])
+                if col not in self.features_bins_labels:
+                    raise ValueError(f"No binning information found for column '{col}'. Fit the column first.")
+                bins = self.features_bins_labels[col]["bins"]
+                labels = self.features_bins_labels[col]["labels"]
+                def categorize(x):
+                    if pd.isna(x):
+                        return "N/A" if self.return_labels else "N/A"
+                    for i in range(len(bins)):
+                        lower = -float("inf") if i == 0 else bins[i-1]
+                        upper = bins[i] if i < len(bins) else float("inf")
+                        if lower <= x < upper:
+                            return labels[i] if self.return_labels else i
+                    return labels[-1] if self.return_labels else len(bins)
+                out[col + suffix] = out[col].map(categorize)
             return out
+
         elif isinstance(df, SparkDataFrame):
-            new_cols = [
-                self._transform_spark(F.col(c)).alias(c + suffix) for c in features
-            ]
+            new_cols = []
+            for col in features:
+                if col not in self.features_bins_labels:
+                    raise ValueError(f"No binning information found for column '{col}'. Fit the column first.")
+                bins = self.features_bins_labels[col]["bins"]
+                labels = self.features_bins_labels[col]["labels"]
+                expr = None
+                bins_ext = [-float("inf")] + bins + [float("inf")]
+                for i in range(len(bins_ext)-1):
+                    lower, upper = bins_ext[i], bins_ext[i+1]
+                    label = labels[i] if self.return_labels else i
+                    condition = (F.col(col) >= lower) & (F.col(col) < upper)
+                    expr = F.when(condition, F.lit(label)) if expr is None else expr.when(condition, F.lit(label))
+                expr = expr.when(F.isnan(F.col(col)), F.lit("N/A")).otherwise(F.lit(labels[-1] if self.return_labels else len(bins)))
+                new_cols.append(expr.alias(col + suffix))
             return df.select("*", *new_cols)
+
         else:
             raise TypeError("df must be a pandas or Spark DataFrame")
 
@@ -184,8 +232,9 @@ class TreeBinner(Binner):
         self.bins: List[float] = []
         self.labels: Optional[List[str]] = None
         self.return_labels = return_labels
+        self.features_bins_labels: dict = {}
 
-    def fit(self, X: pd.Series, y: pd.Series) -> List[float]:
+    def fit(self, X: pd.Series, y: pd.Series, col_name: Optional[str] = None) -> List[float]:
         """
         Fit a decision tree to determine optimal bin edges.
 
@@ -195,6 +244,8 @@ class TreeBinner(Binner):
             Feature values to bin.
         y : pd.Series
             Target variable guiding the splits.
+        col_name : str, optional
+            Name of the feature/column to store bins and labels in `features_bins_labels`.
 
         Returns
         -------
@@ -207,19 +258,28 @@ class TreeBinner(Binner):
 
         if len(X_train) == 0:
             self.bins = []
-            return self.bins
+        else:
+            model = DecisionTreeClassifier(
+                max_depth=self.max_depth,
+                max_leaf_nodes=self.max_leaf_nodes,
+                random_state=self.random_state
+            )
+            model.fit(X_train, y_train)
+            tree = model.tree_
+            internal_node_mask = tree.feature != -2
+            splits = tree.threshold[internal_node_mask]
+            self.bins = sorted(set(float(s) for s in splits if s != -2.0))
 
-        model = DecisionTreeClassifier(
-            max_depth=self.max_depth,
-            max_leaf_nodes=self.max_leaf_nodes,
-            random_state=self.random_state
-        )
-        model.fit(X_train, y_train)
+        # Gera labels automaticamente
+        self.labels = self._make_labels(self.bins)
 
-        tree = model.tree_
-        internal_node_mask = tree.feature != -2
-        splits = tree.threshold[internal_node_mask]
-        self.bins = sorted(set(float(s) for s in splits if s != -2.0))
+        # Salva bins e labels no dicionário se col_name for fornecido
+        if col_name is not None:
+            self.features_bins_labels[col_name] = {
+                "bins": self.bins.copy(),
+                "labels": self.labels.copy()
+            }
+
         return self.bins
 
 
@@ -247,8 +307,9 @@ class CutBinner(Binner):
         self.nan_value = nan_value
         self.bins: List[float] = []
         self.return_labels = return_labels
+        self.features_bins_labels: dict = {}
 
-    def fit(self, X: pd.Series, y: pd.Series = None) -> List[float]:
+    def fit(self, X: pd.Series, y: pd.Series = None, col_name: Optional[str] = None) -> List[float]:
         """
         Fit the binner by validating and adjusting predefined bin edges to the data.
 
@@ -276,5 +337,10 @@ class CutBinner(Binner):
             for i in range(len(self.bins) - 1):
                 self.labels.append(f"[{self.bins[i]:.6g}, {self.bins[i+1]:.6g})")
             self.labels.append(f">={self.bins[-1]:.6g}")
-
+        # Salva bins e labels no dicionário se col_name for fornecido
+        if col_name is not None:
+            self.features_bins_labels[col_name] = {
+                "bins": self.bins.copy(),
+                "labels": self.labels.copy()
+            }
         return self.bins

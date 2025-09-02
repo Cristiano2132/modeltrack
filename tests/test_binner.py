@@ -47,7 +47,8 @@ class TestBinnersPandas(unittest.TestCase):
 
     def test_transform_dataframe_pandas(self):
         binner = CutBinner(bins=[2000, 5000, 8000])
-        binner.fit(self.df["renda"])
+        binner.fit(self.df["renda"], col_name="renda")
+        binner.fit(self.df["idade"], col_name="idade")
         features = ["idade", "renda"]
         out = binner.transform_dataframe(self.df, features)
         # Checa se colunas binned existem
@@ -97,16 +98,24 @@ class TestBinnersSpark(unittest.TestCase):
         self.assertIn("N/A", out_values)
 
     def test_transform_dataframe_spark(self):
-        binner = CutBinner(bins=[2000, 5000, 8000])
-        binner.fit(self.df_pd["renda"])
+        binner = TreeBinner(max_depth=2)
         features = ["idade", "renda"]
+        for f in features:
+            binner.fit(X=self.df_spark.select(f).toPandas()[f], y=self.df_spark.select("target").toPandas()["target"], col_name=f)
+
+        features_bins_labels = binner.features_bins_labels
+        for f in features:
+            self.assertIn(f, features_bins_labels)
+
         out = binner.transform_dataframe(self.df_spark, features)
         # Checa se colunas binned existem
         for f in features:
             self.assertIn(f + "_binned", out.columns)
             # Checa se valores estão dentro das labels ou N/A
             values = out.select(f + "_binned").toPandas()[f + "_binned"].fillna("N/A").astype(str).tolist()
-            self.assertTrue(all((v in binner.labels) or v == "N/A" for v in values))
+            labels = binner.features_bins_labels.get(f).get("labels")
+            self.assertTrue(all((v in labels) or v == "N/A" for v in values))
+
 
 # =========================
 # 3. Spark vs Pandas
@@ -147,9 +156,11 @@ class TestBinnersSparkVsPandas(unittest.TestCase):
         self.assertEqual(pd_values, spark_values)
 
     def test_transform_dataframe_multiple_columns(self):
-        binner = CutBinner(bins=[2000, 5000, 8000])
-        binner.fit(self.df_pd["renda"])
+        binner = TreeBinner(max_depth=2)
         features = ["idade", "renda"]
+        for f in features:
+            binner.fit(X=self.df_spark.select(f).toPandas()[f], y=self.df_spark.select("target").toPandas()["target"], col_name=f)
+
         # Pandas
         out_pd = binner.transform_dataframe(self.df_pd, features)
         # Spark
