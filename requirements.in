@@ -7,7 +7,7 @@ statsmodels
 scipy
 tabulate
 pyspark==3.5.1
-pyarrow
+pyarrow<=17.0.0
 lightgbm
 xgboost
 optuna
