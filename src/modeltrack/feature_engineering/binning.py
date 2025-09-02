@@ -142,7 +142,22 @@ class Binner(BaseBinner):
             return self._transform_spark(X)
         else:
             raise TypeError("X must be a pandas Series or PySpark Column")
-    
+
+    def transform_dataframe(self, df: Union[pd.DataFrame, SparkDataFrame], features: List[str], suffix: str = "_binned"
+                            ) -> Union[pd.DataFrame, SparkDataFrame]:
+        if isinstance(df, pd.DataFrame):
+            out = df.copy()
+            for col in features:
+                out[col + suffix] = self._transform_pandas(out[col])
+            return out
+        elif isinstance(df, SparkDataFrame):
+            new_cols = [
+                self._transform_spark(F.col(c)).alias(c + suffix) for c in features
+            ]
+            return df.select("*", *new_cols)
+        else:
+            raise TypeError("df must be a pandas or Spark DataFrame")
+
 
 class TreeBinner(Binner):
     """
