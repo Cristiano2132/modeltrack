@@ -148,10 +148,10 @@ class WOEEncoder(Transformer):
             return df_out
 
         # Spark Column (use col_name as mandatory)
-        if "pyspark.sql.column.Column" in str(type(X)):
+        if isinstance(X, SparkDataFrame):
             raise ValueError("For Spark Column, use transform with col_name via fit")
 
-        raise TypeError("X must be a Pandas Series, Pandas DataFrame, Spark Column, or Spark DataFrame")
+        raise TypeError(f"X must be a Pandas Series, Pandas DataFrame, Spark Column, or Spark DataFrame. The current type is {type(X)}")
 
     def transform_dataframe(
         self,
@@ -182,7 +182,8 @@ class WOEEncoder(Transformer):
                 df_out[col + suffix] = self._transform_pandas(df[col], col)
             return df_out
 
-        if "pyspark.sql.dataframe.DataFrame" in str(type(df)):
+
+        if isinstance(df, pd.DataFrame):
             exprs = [df[col] for col in df.columns]  # mantém todas as colunas originais
             exprs += [
                 self._transform_spark(F.col(col), col).alias(col + suffix)
@@ -190,4 +191,4 @@ class WOEEncoder(Transformer):
             ]
             return df.select(*exprs)
 
-        raise TypeError("df must be a Pandas DataFrame or Spark DataFrame")
+        raise TypeError(f"df must be a Pandas DataFrame or Spark DataFrame. The current type is {type(df)}")

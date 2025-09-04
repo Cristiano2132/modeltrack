@@ -19,6 +19,6 @@ ENV PYTHONPATH=/app/src
 COPY requirements-dev.txt ./
 RUN pip install --upgrade pip && pip install -r requirements-dev.txt
 COPY . .
-RUN pip install .
+RUN pip install -e .
 
 CMD ["bash", "-c", "coverage run --source=src -m unittest discover -s tests && coverage report --fail-under=80"]
